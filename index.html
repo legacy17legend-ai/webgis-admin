@@ -28,19 +28,7 @@
         
         .leaflet-control-layers-base label, .leaflet-control-layers-overlays label { font-size: 12px; padding: 2px 0; margin-bottom: 0; }
         .leaflet-control-layers-separator { margin: 6px 0; border-top: 1px solid #cbd5e0; }
-        
-        /* CSS Untuk Teks Label Desa */
-        .point-label { 
-            background: transparent; 
-            border: none; 
-            box-shadow: none; 
-            color: #ffffff; /* Warna teks putih */
-            font-weight: bold; 
-            font-size: 11px; 
-            white-space: nowrap; 
-            /* Outline hitam agar teks terbaca di satelit hijau */
-            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; 
-        }
+        .point-label { background: transparent; border: none; box-shadow: none; color: #ffffff; font-weight: bold; font-size: 11px; white-space: nowrap; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
         .point-label::before { display: none; }
     </style>
 </head>
@@ -64,19 +52,19 @@
 <script src="https://unpkg.com/leaflet-kmz@latest/dist/leaflet-kmz.js"></script>
 
 <script>
-    // Konfigurasi data file KMZ lokal
+    // 1. Konfigurasi data file KMZ lokal yang baru
     const dataPetaAdmin = [
         {
             namaLayer: "Titik Desa",
-            url: "Desa_2.kmz" // Sesuai file KMZ terbaru Anda
+            url: "Desa.kmz" 
         },
         {
             namaLayer: "Rencana Jalan Usulan",
-            url: "JALAN.kmz" // Sesuai file KMZ terbaru Anda
+            url: "JALAN.kmz"
         }
     ];
 
-    // Konfigurasi Peta Dasar (Basemaps)
+    // 2. Konfigurasi Peta Dasar (Basemaps)
     const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Earth' });
     const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps' });
     const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
@@ -89,21 +77,23 @@
     const overlayMaps = {};
     const layerControl = L.control.layers(baseMaps, overlayMaps, { position: 'topright', collapsed: false }).addTo(map);
 
+    // 3. Konfigurasi Ikon Kustom untuk Titik Desa
+    const ikonDesa = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/2555/2555523.png',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+        popupAnchor: [0, -28]
+    });
+
     let lastClickedLayer = null;
 
-    // Fungsi untuk mengatur Tampilan Popup & Label Interaktif
+    // 4. Fungsi untuk mengatur Tampilan Popup & Label Interaktif
     function onEachFeature(feature, layer) {
         const featureName = feature.properties?.name || feature.properties?.nama || feature.properties?.Name || feature.properties?.KAMPUNG;
         
         if (featureName) {
-            // PERBAIKAN: Gunakan instanceof L.Marker agar titik KMZ terbaca akurat
-            if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
-                layer.bindTooltip(featureName, { 
-                    permanent: true,       // Selalu muncul
-                    direction: 'right',    // Di samping kanan ikon
-                    className: 'point-label', 
-                    offset: [10, -10]      // Jarak offset teks agar tidak menutupi ikon kuning
-                });
+            if (feature.geometry.type === 'Point') {
+                layer.bindTooltip(featureName, { permanent: true, direction: 'right', className: 'point-label', offset: [8, 0] });
             } else {
                 layer.bindTooltip(featureName, { sticky: true });
             }
@@ -132,7 +122,7 @@
 
         layer.bindPopup(popupContent, { maxWidth: 350 });
 
-        // Efek garis saat diklik
+        // Efek garis kuning saat diklik
         layer.on('click', function(e) {
             if (lastClickedLayer && lastClickedLayer !== e.target) {
                 if (['LineString', 'MultiLineString'].includes(lastClickedLayer.feature?.geometry?.type)) {
@@ -145,6 +135,7 @@
             }
         });
 
+        // Mengembalikan warna asli saat popup ditutup
         layer.on('popupclose', function(e) {
             if (lastClickedLayer === e.target) {
                 if (['LineString', 'MultiLineString'].includes(feature.geometry.type)) {
@@ -155,16 +146,16 @@
         });
     }
 
-    // Fungsi ketebalan garis jalan
+    // Fungsi warna bawaan (sebagai fallback)
     function styleFeature(feature) {
         const color = feature.properties?.stroke || feature.properties?.color || '#ef4444';
         if (['LineString', 'MultiLineString'].includes(feature.geometry.type)) {
-            return { color: color, weight: 4, opacity: 0.9 };
+            return { color: color, weight: 6, opacity: 1 };
         }
         return {};
     }
 
-    // Fungsi Utama Memuat File KMZ
+    // 5. Fungsi Utama Memuat File KMZ
     async function loadAutoData(item) {
         try {
             const kmzLayer = L.kmzLayer().addTo(map);
@@ -173,12 +164,19 @@
                 onEachFeature(feature, layer);
             };
 
+            // Terapkan ikon kustom jika layer yang dimuat adalah Titik Desa
+            if (item.namaLayer === "Titik Desa") {
+                kmzLayer.options.pointToLayer = function(feature, latlng) {
+                    return L.marker(latlng, { icon: ikonDesa });
+                };
+            }
+
             // PAKSA WARNA GARIS UNTUK JALAN AGAR PASTI MUNCUL TEBAL
             if (item.namaLayer === "Rencana Jalan Usulan") {
                 kmzLayer.options.style = function(feature) {
                     return { 
                         color: '#ef4444', // Warna garis jalan (Merah)
-                        weight: 4,        // Ketebalan garis
+                        weight: 6,        // Ketebalan garis
                         opacity: 1        // Transparansi garis
                     };
                 };
@@ -199,7 +197,7 @@
         }
     }
 
-    // Menjalankan skrip saat halaman dimuat
+    // 6. Menjalankan skrip saat halaman dimuat
     window.addEventListener('load', async () => {
         const overlay = document.getElementById('loading-overlay');
         const textIndicator = document.getElementById('loading-text');
