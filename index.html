@@ -28,7 +28,19 @@
         
         .leaflet-control-layers-base label, .leaflet-control-layers-overlays label { font-size: 12px; padding: 2px 0; margin-bottom: 0; }
         .leaflet-control-layers-separator { margin: 6px 0; border-top: 1px solid #cbd5e0; }
-        .point-label { background: transparent; border: none; box-shadow: none; color: #ffffff; font-weight: bold; font-size: 11px; white-space: nowrap; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+        
+        /* CSS Untuk Teks Label Desa */
+        .point-label { 
+            background: transparent; 
+            border: none; 
+            box-shadow: none; 
+            color: #ffffff; /* Warna teks putih */
+            font-weight: bold; 
+            font-size: 11px; 
+            white-space: nowrap; 
+            /* Outline hitam agar teks terbaca di satelit hijau */
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; 
+        }
         .point-label::before { display: none; }
     </style>
 </head>
@@ -47,6 +59,7 @@
     </button>
 </div>
 
+<!-- Library Leaflet & KMZ Plugin -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-kmz@latest/dist/leaflet-kmz.js"></script>
 
@@ -55,15 +68,15 @@
     const dataPetaAdmin = [
         {
             namaLayer: "Titik Desa",
-            url: "Desa.kmz" 
+            url: "Desa_2.kmz" // Sesuai file KMZ terbaru Anda
         },
         {
             namaLayer: "Rencana Jalan Usulan",
-            url: "JALAN.kmz"
+            url: "JALAN.kmz" // Sesuai file KMZ terbaru Anda
         }
     ];
 
-    // Konfigurasi Peta Dasar
+    // Konfigurasi Peta Dasar (Basemaps)
     const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Earth' });
     const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps' });
     const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
@@ -76,22 +89,21 @@
     const overlayMaps = {};
     const layerControl = L.control.layers(baseMaps, overlayMaps, { position: 'topright', collapsed: false }).addTo(map);
 
-    // Konfigurasi Ikon Kustom untuk Titik Desa
-    const ikonDesa = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/2555/2555523.png',
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-        popupAnchor: [0, -28]
-    });
-
     let lastClickedLayer = null;
 
+    // Fungsi untuk mengatur Tampilan Popup & Label Interaktif
     function onEachFeature(feature, layer) {
         const featureName = feature.properties?.name || feature.properties?.nama || feature.properties?.Name || feature.properties?.KAMPUNG;
         
         if (featureName) {
-            if (feature.geometry.type === 'Point') {
-                layer.bindTooltip(featureName, { permanent: true, direction: 'right', className: 'point-label', offset: [8, 0] });
+            // PERBAIKAN: Gunakan instanceof L.Marker agar titik KMZ terbaca akurat
+            if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                layer.bindTooltip(featureName, { 
+                    permanent: true,       // Selalu muncul
+                    direction: 'right',    // Di samping kanan ikon
+                    className: 'point-label', 
+                    offset: [10, -10]      // Jarak offset teks agar tidak menutupi ikon kuning
+                });
             } else {
                 layer.bindTooltip(featureName, { sticky: true });
             }
@@ -120,6 +132,7 @@
 
         layer.bindPopup(popupContent, { maxWidth: 350 });
 
+        // Efek garis saat diklik
         layer.on('click', function(e) {
             if (lastClickedLayer && lastClickedLayer !== e.target) {
                 if (['LineString', 'MultiLineString'].includes(lastClickedLayer.feature?.geometry?.type)) {
@@ -142,14 +155,16 @@
         });
     }
 
+    // Fungsi ketebalan garis jalan
     function styleFeature(feature) {
-        const color = feature.properties?.stroke || feature.properties?.color || '#3b82f6';
+        const color = feature.properties?.stroke || feature.properties?.color || '#ef4444';
         if (['LineString', 'MultiLineString'].includes(feature.geometry.type)) {
             return { color: color, weight: 4, opacity: 0.9 };
         }
         return {};
     }
 
+    // Fungsi Utama Memuat File KMZ
     async function loadAutoData(item) {
         try {
             const kmzLayer = L.kmzLayer().addTo(map);
@@ -158,10 +173,14 @@
                 onEachFeature(feature, layer);
             };
 
-            // Terapkan ikon kustom jika layer yang dimuat adalah Titik Desa
-            if (item.namaLayer === "Titik Desa") {
-                kmzLayer.options.pointToLayer = function(feature, latlng) {
-                    return L.marker(latlng, { icon: ikonDesa });
+            // PAKSA WARNA GARIS UNTUK JALAN AGAR PASTI MUNCUL TEBAL
+            if (item.namaLayer === "Rencana Jalan Usulan") {
+                kmzLayer.options.style = function(feature) {
+                    return { 
+                        color: '#ef4444', // Warna garis jalan (Merah)
+                        weight: 4,        // Ketebalan garis
+                        opacity: 1        // Transparansi garis
+                    };
                 };
             }
 
@@ -180,6 +199,7 @@
         }
     }
 
+    // Menjalankan skrip saat halaman dimuat
     window.addEventListener('load', async () => {
         const overlay = document.getElementById('loading-overlay');
         const textIndicator = document.getElementById('loading-text');
@@ -189,9 +209,10 @@
             await loadAutoData(item);
         }
 
-        overlay.style.display = 'none';
+        overlay.style.display = 'none'; // Sembunyikan loading jika sudah selesai
     });
 
+    // Fitur Layar Penuh (Fullscreen)
     function toggleFullScreen() {
         const elem = document.getElementById("gis-container");
         if (!document.fullscreenElement) {
