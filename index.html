@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Informasi Geografis - Mode Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        #gis-container { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+        #map { height: 100%; width: 100%; z-index: 1; }
+        
+        #loading-overlay {
+            position: absolute; top: 15px; left: 15px; z-index: 1000;
+            background: rgba(255,255,255,0.95); padding: 8px 14px; border-radius: 6px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15); font-size: 12px; font-weight: bold; color: #1d4ed8;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .spinner { border: 2px solid #e5e7eb; border-top: 2px solid #2563eb; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .leaflet-popup-content-wrapper { border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .leaflet-popup-content { font-size: 12px; max-height: 250px; overflow-y: auto; width: max-content; min-width: 180px; margin: 10px; }
+        .leaflet-popup-content table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+        .leaflet-popup-content th, .leaflet-popup-content td { border: 1px solid #e2e8f0; padding: 4px; }
+        .leaflet-popup-content th { background-color: #f8fafc; text-align: left; font-weight: 600; color: #475569; }
+        
+        .leaflet-control-layers-base label, .leaflet-control-layers-overlays label { font-size: 12px; padding: 2px 0; margin-bottom: 0; }
+        .leaflet-control-layers-separator { margin: 6px 0; border-top: 1px solid #cbd5e0; }
+        .point-label { background: transparent; border: none; box-shadow: none; color: #ffffff; font-weight: bold; font-size: 11px; white-space: nowrap; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+        .point-label::before { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="gis-container">
+    <div id="map"></div>
+    
+    <div id="loading-overlay">
+        <div class="spinner"></div> <span id="loading-text">Memuat data spasial...</span>
+    </div>
+
+    <button onclick="toggleFullScreen()" class="absolute bottom-4 left-4 z-[1000] bg-white text-gray-800 font-bold py-1.5 px-2.5 rounded shadow-md border border-gray-300 hover:bg-gray-100 flex items-center text-[11px] cursor-pointer">
+        <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+        Layar Penuh
+    </button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-kmz@latest/dist/leaflet-kmz.js"></script>
+
+<script>
+    // Konfigurasi data file KMZ lokal
+    const dataPetaAdmin = [
+        {
+            namaLayer: "Titik Desa",
+            url: "Desa.kmz" 
+        },
+        {
+            namaLayer: "Rencana Jalan Usulan",
+            url: "RUAS USULAN JALAN.kmz"
+        }
+    ];
+
+    // Konfigurasi Peta Dasar
+    const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Earth' });
+    const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google Maps' });
+    const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
+
+    const map = L.map('map', { zoomControl: false, layers: [googleHybrid] }).setView([-2.5, 112.2], 9);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    const baseMaps = { "Google Earth": googleHybrid, "Google Maps": googleStreets, "Esri Satelit": esriImagery, "OpenStreetMap": osm };
+    const overlayMaps = {};
+    const layerControl = L.control.layers(baseMaps, overlayMaps, { position: 'topright', collapsed: false }).addTo(map);
+
+    // Konfigurasi Ikon Kustom untuk Titik Desa
+    const ikonDesa = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/2555/2555523.png',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+        popupAnchor: [0, -28]
+    });
+
+    let lastClickedLayer = null;
+
+    function onEachFeature(feature, layer) {
+        const featureName = feature.properties?.name || feature.properties?.nama || feature.properties?.Name || feature.properties?.KAMPUNG;
+        
+        if (featureName) {
+            if (feature.geometry.type === 'Point') {
+                layer.bindTooltip(featureName, { permanent: true, direction: 'right', className: 'point-label', offset: [8, 0] });
+            } else {
+                layer.bindTooltip(featureName, { sticky: true });
+            }
+        }
+
+        let popupContent = '<div>';
+        if (featureName) {
+            popupContent += `<h3 style="font-size:13px; font-weight:bold; margin-top:0; margin-bottom:6px; border-bottom:2px solid #2563eb; padding-bottom:3px; color:#0f172a;">${featureName}</h3>`;
+        }
+
+        if (feature.properties?.description) {
+            popupContent += `<div style="margin-top:4px; font-size:11px;">${feature.properties.description}</div>`;
+        } else {
+            let hasProps = false;
+            let tableHtml = '<table><tbody>';
+            for (const [key, value] of Object.entries(feature.properties || {})) {
+                if(!['styleUrl', 'styleHash', 'styleMapHash', 'stroke', 'stroke-opacity', 'stroke-width', 'fill', 'fill-opacity', 'name', 'KAMPUNG'].includes(key)) {
+                    hasProps = true;
+                    tableHtml += `<tr><th style="width:40%;">${key.replace(/_/g, ' ')}</th><td>${value !== null && value !== undefined ? value : '-'}</td></tr>`;
+                }
+            }
+            tableHtml += '</tbody></table>';
+            popupContent += hasProps ? tableHtml : '<p style="font-size:11px; color:gray;">Tidak ada atribut detail.</p>';
+        }
+        popupContent += '</div>';
+
+        layer.bindPopup(popupContent, { maxWidth: 350 });
+
+        layer.on('click', function(e) {
+            if (lastClickedLayer && lastClickedLayer !== e.target) {
+                if (['LineString', 'MultiLineString'].includes(lastClickedLayer.feature?.geometry?.type)) {
+                    lastClickedLayer.setStyle(styleFeature(lastClickedLayer.feature));
+                }
+            }
+            if (['LineString', 'MultiLineString'].includes(feature.geometry.type)) {
+                e.target.setStyle({ color: '#facc15', weight: 6, opacity: 1 });
+                lastClickedLayer = e.target;
+            }
+        });
+
+        layer.on('popupclose', function(e) {
+            if (lastClickedLayer === e.target) {
+                if (['LineString', 'MultiLineString'].includes(feature.geometry.type)) {
+                    e.target.setStyle(styleFeature(feature));
+                }
+                lastClickedLayer = null;
+            }
+        });
+    }
+
+    function styleFeature(feature) {
+        const color = feature.properties?.stroke || feature.properties?.color || '#3b82f6';
+        if (['LineString', 'MultiLineString'].includes(feature.geometry.type)) {
+            return { color: color, weight: 4, opacity: 0.9 };
+        }
+        return {};
+    }
+
+    async function loadAutoData(item) {
+        try {
+            const kmzLayer = L.kmzLayer().addTo(map);
+            
+            kmzLayer.options.onEachFeature = function(feature, layer) {
+                onEachFeature(feature, layer);
+            };
+
+            // Terapkan ikon kustom jika layer yang dimuat adalah Titik Desa
+            if (item.namaLayer === "Titik Desa") {
+                kmzLayer.options.pointToLayer = function(feature, latlng) {
+                    return L.marker(latlng, { icon: ikonDesa });
+                };
+            }
+
+            kmzLayer.on('load', function(e) {
+                layerControl.addOverlay(kmzLayer, item.namaLayer);
+                if (kmzLayer.getLayers().length > 0) {
+                    map.fitBounds(kmzLayer.getBounds(), { padding: [30, 30] });
+                }
+            });
+
+            // Eksekusi pemuatan file KMZ
+            kmzLayer.load(item.url);
+
+        } catch (error) {
+            console.error(`Kendala pada ${item.namaLayer}:`, error);
+        }
+    }
+
+    window.addEventListener('load', async () => {
+        const overlay = document.getElementById('loading-overlay');
+        const textIndicator = document.getElementById('loading-text');
+
+        for (const item of dataPetaAdmin) {
+            textIndicator.innerText = `Memuat ${item.namaLayer}...`;
+            await loadAutoData(item);
+        }
+
+        overlay.style.display = 'none';
+    });
+
+    function toggleFullScreen() {
+        const elem = document.getElementById("gis-container");
+        if (!document.fullscreenElement) {
+            if (elem.requestFullscreen) elem.requestFullscreen();
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+        }
+    }
+</script>
+</body>
+</html>
